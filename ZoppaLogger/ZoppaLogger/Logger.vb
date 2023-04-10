@@ -46,6 +46,9 @@ Public Class Logger
     ' 書込みバッファ
     Private ReadOnly mQueue As New Queue(Of LogData)()
 
+    ' エラー書込みバッファ
+    Private ReadOnly mErrQueue As New Queue(Of LogData)()
+
     ' 前回書込み完了日時
     Private mPrevWriteDate As Date
 
@@ -245,26 +248,38 @@ Public Class Logger
                 Do
                     ' キュー内の文字列を取得
                     '
-                    ' 1. キューにログ情報がある
+                    ' 2. キューにログ情報がある
                     '    対象ログレベル以上のログレベルを出力する場合、出力する
-                    ' 2. キューにログ情報が空の場合はループを抜けてファイルストリームを閉じる
+                    ' 3. キューにログ情報が空の場合はループを抜けてファイルストリームを閉じる
                     writed = False
                     Dim ln As LogData? = Nothing
                     Dim outd As Boolean = False
                     SyncLock Me
-                        If Me.mQueue.Count > 0 Then
-                            ln = Me.mQueue.Dequeue()                    ' 1
+                        If Me.mErrQueue.Count > 0 Then                  ' 1
+                            ln = Me.mErrQueue.Dequeue()
+                            If Me.mLogLevel >= ln.Value.LogLevel Then
+                                outd = True
+                            End If
+                        ElseIf Me.mQueue.Count > 0 Then
+                            ln = Me.mQueue.Dequeue()                    ' 2
                             If Me.mLogLevel >= ln.Value.LogLevel Then
                                 outd = True
                             End If
                         Else
-                            Exit Do                                     ' 2
+                            Exit Do                                     ' 3
                         End If
                     End SyncLock
 
                     ' ファイルに書き出す
                     If ln IsNot Nothing Then
-                        If outd Then sw.WriteLine(Me.mFormatMethod(ln.Value))
+                        Try
+                            If outd Then
+                                sw.WriteLine(Me.mFormatMethod(ln.Value))
+                            End If
+                        Catch ex As Exception
+                            Debug.WriteLine($"output file error {ex.Message}")
+                            Me.mErrQueue.Enqueue(ln.Value)
+                        End Try
                         writed = True
                     End If
 
@@ -428,7 +443,7 @@ Public Class Logger
     Public ReadOnly Property IsWriting() As Boolean
         Get
             SyncLock Me
-                Return (Me.mQueue.Count > 0)
+                Return (Me.mQueue.Count + Me.mErrQueue.Count > 0)
             End SyncLock
         End Get
     End Property
