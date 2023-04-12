@@ -40,10 +40,26 @@ Dim logger = ZoppaLogger.Logger.Use(maxLogSize:=200 * 1024)
 `Use`メソッドとは別に`UseCustom`メソッドを使用すると`Logger`クラスを継承したログ出力クラスを使用することができます（継承したクラスではイベントメソッドをオーバーライドすることができます）  
 
 ### ログの出力
+ログは設定したログレベルの重要さよって出力の有無を切り替えて出力します。  
+それば`Logger`にログレベルを`Infomation`と設定した場合、`Infomation`より重要ではない`Debug`が出力されないという動作になります。  
+ログレベルは重要順に以下のように設定しています。  
 
-
+|ログレベル|内容|説明|出力メソッド|
+|:--|:--|:--|:--|
+|Fatal|致命的なエラーログ|致命的なエラーのときに出力するログです。|LoggingFatal|
+|Error|エラーログ|エラーのときに出力するログです。そのため、エラーメッセージの他に例外クラスを引数に与えて出力することができます。|LoggingError|
+|Warning|警告ログ|処理の中で注意が必要なときに出力するログです。|LoggingWarning|
+|Infomation|通常ログ|通常のログです。|LoggingInformation|
+|Debug|デバッグ用のログ|開発時にデバッグ用に出力するログです。|LoggingDebug|
 
 ### イベント
+`Logger`では以下のイベントがあります。
+
+|イベント|内容|
+|:--|:--|
+|NotificationException|ログ出力処理の中で例外が発生したことを通知します。|
+|NotificationCompressedFile|出力中のログファイル切り替わり、直前のログファイルが圧縮されたことを通知します。|
+|NotificationOrganizeCompressedFile|過去ログファイルが最大件数を超えて作成されたことを通知します。|
 
 
 ## 作成情報

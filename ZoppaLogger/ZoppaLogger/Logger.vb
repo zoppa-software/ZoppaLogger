@@ -5,9 +5,15 @@ Imports System.IO
 Imports System.IO.Compression
 Imports System.Runtime.CompilerServices
 Imports System.Threading
+Imports ZoppaLogger.Logger
 
 ''' <summary>ログ出力機能。</summary>
 Public Class Logger
+
+    ''' <summary>ログ処理内で例外が発生したことを通知します。</summary>
+    ''' <param name="sender">イベント発行元。</param>
+    ''' <param name="e">イベントオブジェクト。</param>
+    Public Event NotificationException(sender As Object, e As NotificationExceptionEventArgs)
 
     ''' <summary>カレントのログファイルが圧縮されたことを通知します。</summary>
     ''' <param name="sender">イベント発行元。</param>
@@ -124,16 +130,7 @@ Public Class Logger
         End SyncLock
 
         ' キューにログが溜まっていたら少々待機
-        Dim cacheLmt As Integer = Me.mCacheLimit
-        If cnt > cacheLmt Then
-            For i As Integer = 0 To 99
-                Thread.Sleep(100)
-                SyncLock Me
-                    cnt = Me.mQueue.Count
-                End SyncLock
-                If cnt < cacheLmt Then Exit For
-            Next
-        End If
+        Me.WaitFlushed(cnt, Me.mCacheLimit)
 
         ' 別スレッドでファイルに出力
         Dim running As Boolean = False
@@ -144,12 +141,33 @@ Public Class Logger
             End If
         End SyncLock
         If running Then
-            Task.Run(Sub() Me.Write())
+            Task.Run(Sub() Me.ThreadWrite())
+        End If
+    End Sub
+
+    ''' <summary>キューに溜まっているログを出力します。</summary>
+    ''' <param name="cnt">キューのログ数。</param>
+    ''' <param name="limit">払い出しリミット。</param>
+    ''' <param name="loopCount">待機ループ回数。</param>
+    ''' <param name="interval">待機ループインターバル。</param>
+    Private Sub WaitFlushed(cnt As Integer,
+                            limit As Integer,
+                            Optional loopCount As Integer = 10,
+                            Optional interval As Integer = 100)
+        If cnt > limit Then
+            For i As Integer = 0 To loopCount - 1
+                Thread.Sleep(interval)
+
+                SyncLock Me
+                    cnt = Me.mQueue.Count
+                End SyncLock
+                If cnt < limit Then Exit For
+            Next
         End If
     End Sub
 
     ''' <summary>ログをファイルに出力する。</summary>
-    Private Sub Write()
+    Private Sub ThreadWrite()
         Me.mLogFile.Refresh()
 
         If Me.mLogFile.Exists AndAlso
@@ -160,83 +178,41 @@ Public Class Logger
                 Dim nm = Me.mLogFile.Name.Substring(0, Me.mLogFile.Name.Length - ext.Length)
                 Dim tn = Date.Now.ToString("yyyyMMddHHmmssfff")
 
-                ' 圧縮するフォルダを作成
                 Dim zipPath = New IO.FileInfo($"{mLogFile.Directory.FullName}\{nm}_{tn}\{nm}{ext}")
-                If Not zipPath.Exists Then
-                    zipPath.Directory.Create()
-                End If
                 Try
-                    ' ログファイルを圧縮するフォルダへ移動
-                    Dim moved = False
-                    Dim exx As Exception = Nothing
-                    For i As Integer = 0 To 4
-                        Try
-                            File.Move(Me.mLogFile.FullName, zipPath.FullName)
-                            moved = True
-                            Exit For
-                        Catch ex As Exception
-                            exx = ex
-                            Thread.Sleep(100)
-                            Debug.WriteLine($"Write 1 {ex.Message}")
-                        End Try
-                    Next
-
-                    ' 移動できたらログファイルを圧縮
-                    If moved Then
-                        Dim compressFile = $"{zipPath.Directory.FullName}.zip"
-
-                        ' 現在のログファイルを圧縮
-                        ZipFile.CreateFromDirectory(zipPath.Directory.FullName, compressFile)
-
-                        ' ログファイルを圧縮したことを外部に通知
-                        Task.Run(
-                            Sub()
-                                Try
-                                    Me.OnNotificationCompressedFile(New NotificationCompressedFileEventArgs(New FileInfo(compressFile)))
-                                Catch ex As Exception
-                                    Debug.WriteLine($"Write 2 {ex.Message}")
-                                End Try
-                            End Sub
-                        )
-                    Else
-                        Throw exx
+                    ' 圧縮するフォルダを作成
+                    If Not zipPath.Exists Then
+                        zipPath.Directory.Create()
                     End If
+
+                    ' ログファイルを圧縮
+                    '
+                    ' 1. 圧縮フォルダにログファイル移動、移動出来たら圧縮
+                    ' 2. 現在のログファイルを圧縮
+                    ' 3. ログファイルを圧縮したことを外部に通知
+                    If Me.RetryableMove(zipPath) Then                                           ' 1
+                        Dim compressFile = $"{zipPath.Directory.FullName}.zip"
+                        ZipFile.CreateFromDirectory(zipPath.Directory.FullName, compressFile)   ' 2
+                        Me.SendNotificationCompressedFile(compressFile)                         ' 3
+                    End If
+
                 Catch ex As Exception
                     Throw
                 Finally
-                    Directory.Delete($"{mLogFile.Directory.FullName}\{nm}_{tn}", True)
+                    Directory.Delete($"{zipPath.Directory.FullName}", True)
                 End Try
 
                 ' 過去ファイルを整理
                 Dim oldfiles = Directory.GetFiles(Me.mLogFile.Directory.FullName, $"{nm}*.zip").ToList()
                 If oldfiles.Count > Me.mLogGen Then
-                    Task.Run(
-                        Sub()
-                            ' 削除順にファイルをソート
-                            oldfiles.Sort()
-
-                            ' 削除するファイルを外部に通知
-                            Dim ev As New NotificationOrganizeCompressedFileEventArgs(oldfiles)
-                            Me.OnNotificationOrganizeCompressedFile(ev)
-
-                            ' キャンセルされていなければ削除
-                            If Not ev.Cancel Then
-                                Do While oldfiles.Count > Me.mLogGen
-                                    If File.Exists(oldfiles.First()) Then
-                                        File.Delete(oldfiles.First())
-                                        oldfiles.RemoveAt(0)
-                                    End If
-                                Loop
-                            End If
-                        End Sub
-                    )
+                    Me.ArchiveOldFiles(oldfiles)
                 End If
 
             Catch ex As Exception
                 SyncLock Me
                     Me.mWriting = False
                 End SyncLock
-                Debug.WriteLine($"Write 3 {ex.Message}")
+                Me.SendNotificationException(ex)
                 Return
             End Try
         End If
@@ -277,8 +253,8 @@ Public Class Logger
                                 sw.WriteLine(Me.mFormatMethod(ln.Value))
                             End If
                         Catch ex As Exception
-                            Debug.WriteLine($"output file error {ex.Message}")
                             Me.mErrQueue.Enqueue(ln.Value)
+                            Me.SendNotificationException(ex)
                         End Try
                         writed = True
                     End If
@@ -302,10 +278,62 @@ Public Class Logger
             SyncLock Me
                 Me.mWriting = False
             End SyncLock
-            Debug.WriteLine($"Write 4 {ex.Message}")
+            Me.SendNotificationException(ex)
         Finally
             Me.mPrevWriteDate = Date.Now
         End Try
+    End Sub
+
+    ''' <summary>ログファイルを圧縮するフォルダへ移動する。</summary>
+    ''' <param name="zipPath">移動先ファイルパス。</param>
+    ''' <param name="retryCount">リトライ回数。</param>
+    ''' <param name="retryInterval">リトライインターバル。</param>
+    ''' <returns>移動に成功した場合はTrue、失敗した場合はFalse。</returns>
+    Private Function RetryableMove(zipPath As FileInfo,
+                                   Optional retryCount As Integer = 5,
+                                   Optional retryInterval As Integer = 100) As Boolean
+        Dim exx As Exception = Nothing
+
+        For i As Integer = 0 To retryCount - 1
+            Try
+                File.Move(Me.mLogFile.FullName, zipPath.FullName)
+                Return True
+            Catch ex As Exception
+                exx = ex
+                Thread.Sleep(retryInterval)
+            End Try
+        Next
+
+        Throw exx
+    End Function
+
+    ''' <summary>過去ファイルを整理する。</summary>
+    ''' <param name="oldFiles">過去ファイルリスト。</param>
+    Private Sub ArchiveOldFiles(oldFiles As List(Of String))
+        Task.Run(
+            Sub()
+                ' 削除順にファイルをソート
+                oldFiles.Sort()
+
+                ' 削除するファイルを外部に通知
+                Dim ev As New NotificationOrganizeCompressedFileEventArgs(oldFiles)
+                Me.OnNotificationOrganizeCompressedFile(ev)
+
+                ' キャンセルされていなければ削除
+                If Not ev.Cancel Then
+                    Try
+                        Do While oldFiles.Count > Me.mLogGen
+                            If File.Exists(oldFiles.First()) Then
+                                File.Delete(oldFiles.First())
+                                oldFiles.RemoveAt(0)
+                            End If
+                        Loop
+                    Catch ex As Exception
+                        Me.SendNotificationException(ex)
+                    End Try
+                End If
+            End Sub
+        )
     End Sub
 
     ''' <summary>ログをファイルに出力する文字列を作成する。</summary>
@@ -325,6 +353,43 @@ Public Class Logger
 
         Return $"[{dat.WriteTime:yyyy/MM/dd HH:mm:ss} {lv} {If(dat.CallerClass IsNot Nothing, $"{dat.CallerClass.Name}.{dat.CallerMethod}({dat.LineNo})", "")}] {dat.LogMessage}"
     End Function
+
+    ''' <summary>例外を発生させたことを通知します。</summary>
+    ''' <param name="sendEx">通知する例外、</param>
+    ''' <param name="memberName">例外を発生させたメソッド。</param>
+    ''' <param name="lineNo">メソッドの行番号。</param>
+    Private Sub SendNotificationException(sendEx As Exception, <CallerMemberName> Optional memberName As String = "", <CallerLineNumber> Optional lineNo As Integer = 0)
+        Debug.WriteLine($"exception {memberName}:{lineNo} {sendEx.Message}")
+        Task.Run(
+            Sub()
+                Try
+                    Me.OnNotificationException(New NotificationExceptionEventArgs(sendEx))
+                Catch ex As Exception
+
+                End Try
+            End Sub
+        )
+    End Sub
+
+    ''' <summary>エラーが発生したことを通知するイベントを発行します。</summary>
+    ''' <param name="e">イベントオブジェクト。</param>
+    Protected Overridable Sub OnNotificationException(e As NotificationExceptionEventArgs)
+        RaiseEvent NotificationException(Me, e)
+    End Sub
+
+    Private Sub SendNotificationCompressedFile(compressFile As String)
+        Task.Run(
+            Sub()
+                Try
+                    Dim fi As New FileInfo(compressFile)
+                    Dim args As New NotificationCompressedFileEventArgs(fi)
+                    Me.OnNotificationCompressedFile(args)
+                Catch ex As Exception
+                    Me.SendNotificationException(ex)
+                End Try
+            End Sub
+        )
+    End Sub
 
     ''' <summary>カレントのログファイルが圧縮されたイベントを発行します。</summary>
     ''' <param name="e">イベントオブジェクト。</param>
@@ -430,7 +495,7 @@ Public Class Logger
                 End If
             End SyncLock
             If running Then
-                Task.Run(Sub() Me.Write())
+                Task.Run(Sub() Me.ThreadWrite())
             End If
 
         Catch ex As Exception
@@ -495,6 +560,22 @@ Public Class Logger
         End Sub
 
     End Structure
+
+    ''' <summary>エラー通知イベント情報。</summary>
+    Public NotInheritable Class NotificationExceptionEventArgs
+        Inherits Exception
+
+        ''' <summary>発生した例外を取得します。</summary>
+        ''' <returns>例外情報。</returns>
+        Public ReadOnly Property Target As Exception
+
+        ''' <summary>コンストラクタ。</summary>
+        ''' <param name="ex">発生した例外。</param>
+        Public Sub New(ex As Exception)
+            Me.Target = ex
+        End Sub
+
+    End Class
 
     ''' <summary>ログファイル圧縮通知イベント情報。</summary>
     Public NotInheritable Class NotificationCompressedFileEventArgs

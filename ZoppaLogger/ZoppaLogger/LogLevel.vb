@@ -10,11 +10,11 @@ Public Enum LogLevel
     ''' <summary>エラーレベル。</summary>
     [Error] = 1
 
-    ''' <summary>案内レベル。</summary>
-    Infomation = 2
-
     ''' <summary>警告レベル。</summary>
-    Warning = 3
+    Warning = 2
+
+    ''' <summary>案内レベル。</summary>
+    Infomation = 3
 
     ''' <summary>デバッグレベル。</summary>
     Debug = 4
