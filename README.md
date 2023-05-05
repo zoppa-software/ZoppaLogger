@@ -40,7 +40,7 @@ Dim logger = ZoppaLogger.Logger.Use(maxLogSize:=200 * 1024)
 `Use`メソッドとは別に`UseCustom`メソッドを使用すると`Logger`クラスを継承したログ出力クラスを使用することができます（継承したクラスではイベントメソッドをオーバーライドすることができます）  
 
 ### ログの出力
-ログは設定したログレベルの重要さよって出力の有無を切り替えて出力します。  
+ログは設定したログレベルの重要さによって出力の有無を切り替えて出力します。  
 それば`Logger`にログレベルを`Infomation`と設定した場合、`Infomation`より重要ではない`Debug`が出力されないという動作になります。  
 ログレベルは重要順に以下のように設定しています。  
 
@@ -65,6 +65,23 @@ Dim logger = ZoppaLogger.Logger.Use(maxLogSize:=200 * 1024)
 |NotificationCompressedFile|出力中のログファイル切り替わり、直前のログファイルが圧縮されたことを通知します。|
 |NotificationOrganizeCompressedFile|過去ログファイルが最大件数を超えて作成されたことを通知します。|
 
+### その他のログ出力
+#### ログレベル別にファイル出力
+`UseCategorize`を使用するとログレベル別にファイル出力します。  
+使い方は`Logger`とほとんど変わりません。  
+
+``` vb.net
+Dim logger = ZoppaLogger.Logger.UseCategorize(maxLogSize:=200 * 1024)
+
+logger.LoggingFatal("Fatal Test")
+logger.LoggingError("Error Test")
+logger.LoggingWarning("Warning Test")
+logger.LoggingInformation("Information Test")
+logger.LoggingDebug("Debug Test")
+
+logger.WaitFinish()
+```
+![](img/01_output.png)
 
 ## 作成情報
 * 造田　崇（zoppa software）
