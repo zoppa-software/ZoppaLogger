@@ -1,8 +1,9 @@
-Imports System
 Imports Xunit
 
 Namespace ZoppaLoggerTest
+
     Public Class LoggerTest
+
         <Fact>
         Sub TestSub()
             Dim logger = ZoppaLogger.Logger.Use(maxLogSize:=200 * 1024)
@@ -14,6 +15,21 @@ Namespace ZoppaLoggerTest
 
             logger.WaitFinish()
         End Sub
+
+        <Fact>
+        Sub Test2Sub()
+            Dim logger = ZoppaLogger.Logger.UseCategorize(maxLogSize:=200 * 1024)
+
+            logger.LoggingFatal("Fatal Test")
+            logger.LoggingError("Error Test")
+            logger.LoggingWarning("Warning Test")
+            logger.LoggingInformation("Information Test")
+            logger.LoggingDebug("Debug Test")
+
+            logger.WaitFinish()
+        End Sub
+
     End Class
+
 End Namespace
 

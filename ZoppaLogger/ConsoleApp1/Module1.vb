@@ -1,7 +1,4 @@
-﻿Imports System.Text
-Imports ZoppaLogger
-
-Module Module1
+﻿Module Module1
 
     Sub Main()
         Dim logger = ZoppaLogger.Logger.UseCustom(Of MyLogger)(maxLogSize:=200 * 1024)

@@ -5,7 +5,6 @@ Imports System.IO
 Imports System.IO.Compression
 Imports System.Runtime.CompilerServices
 Imports System.Threading
-Imports ZoppaLogger.Logger
 
 ''' <summary>ログ出力機能。</summary>
 Public Class Logger
@@ -79,6 +78,45 @@ Public Class Logger
                                Optional cacheLimit As Integer = 1000,
                                Optional formatMethod As Func(Of LogData, String) = Nothing) As Logger
         Return UseCustom(Of Logger)(logFilePath, encode, maxLogSize, logGeneration, logLevel, dateChange, cacheLimit, formatMethod)
+    End Function
+
+    ''' <summary>カテゴリ別のログを使用します。</summary>
+    ''' <param name="fatalLogFilePath">出力ファイルパス（致命的なエラー）</param>
+    ''' <param name="errorLogFilePath">出力ファイルパス（エラー）</param>
+    ''' <param name="warningLogFilePath">出力ファイルパス（警告）</param>
+    ''' <param name="informationLogFilePath">出力ファイルパス（案内）</param>
+    ''' <param name="debugLogFilePath">出力ファイルパス（デバッグ）</param>
+    ''' <param name="encode">出力エンコード。</param>
+    ''' <param name="maxLogSize">最大ログファイルサイズ。</param>
+    ''' <param name="logGeneration">ログ世代数。</param>
+    ''' <param name="logLevel">ログレベル。</param>
+    ''' <param name="dateChange">日付の変更でログを切り替えるかの設定。</param>
+    ''' <param name="cacheLimit">ログを貯めて置くリミット（超えたらログ出力を優先）</param>
+    ''' <param name="formatMethod">ログ出力書式メソッド。</param>
+    Public Shared Function UseCategorize(Optional fatalLogFilePath As String = "fatal.log",
+                                         Optional errorLogFilePath As String = "error.log",
+                                         Optional warningLogFilePath As String = "warning.log",
+                                         Optional informationLogFilePath As String = "information.log",
+                                         Optional debugLogFilePath As String = "debug.log",
+                                         Optional encode As Text.Encoding = Nothing,
+                                         Optional maxLogSize As Integer = 30 * 1024 * 1024,
+                                         Optional logGeneration As Integer = 10,
+                                         Optional logLevel As LogLevel = LogLevel.Debug,
+                                         Optional dateChange As Boolean = False,
+                                         Optional cacheLimit As Integer = 1000,
+                                         Optional formatMethod As Func(Of LogData, String) = Nothing) As CategorizeLogger
+        Return New CategorizeLogger(fatalLogFilePath,
+                                    errorLogFilePath,
+                                    warningLogFilePath,
+                                    informationLogFilePath,
+                                    debugLogFilePath,
+                                    If(encode, Text.Encoding.Default),
+                                    maxLogSize,
+                                    logGeneration,
+                                    logLevel,
+                                    dateChange,
+                                    cacheLimit,
+                                    formatMethod)
     End Function
 
     ''' <summary>カスタムログを使用します。</summary>
@@ -377,6 +415,8 @@ Public Class Logger
         RaiseEvent NotificationException(Me, e)
     End Sub
 
+    ''' <summary>ログファイルが圧縮されたことを通知するイベントを発行します。</summary>
+    ''' <param name="e">イベントオブジェクト。</param>
     Private Sub SendNotificationCompressedFile(compressFile As String)
         Task.Run(
             Sub()
