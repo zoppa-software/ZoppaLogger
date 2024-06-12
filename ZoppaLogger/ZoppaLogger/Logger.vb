@@ -206,6 +206,7 @@ Public Class Logger
 
     ''' <summary>ログをファイルに出力する。</summary>
     Private Sub ThreadWrite()
+RETRY_THREAD:
         Me.mLogFile.Refresh()
 
         If Me.mLogFile.Exists AndAlso
@@ -280,7 +281,8 @@ Public Class Logger
                                 outd = True
                             End If
                         Else
-                            Exit Do                                     ' 3
+                            Me.mWriting = False                         ' 3
+                            Exit Do
                         End If
                     End SyncLock
 
@@ -300,15 +302,10 @@ Public Class Logger
                     ' 出力した結果、ログファイルが最大サイズを超える場合、ループを抜けてストリームを閉じる
                     Me.mLogFile.Refresh()
                     If Me.mLogFile.Length > Me.mMaxLogSize OrElse Me.ChangeOfDate Then
-                        Exit Do
+                        GoTo RETRY_THREAD
                     End If
                 Loop While writed
             End Using
-
-            ' 上のループを抜けたとき実行中フラグを落とす
-            SyncLock Me
-                Me.mWriting = False
-            End SyncLock
 
             Threading.Thread.Sleep(10)
 
