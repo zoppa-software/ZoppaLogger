@@ -4,7 +4,7 @@
     <RootNamespace>ZoppaLogger</RootNamespace>
     <TargetFramework>netstandard2.0</TargetFramework>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-	<VersionPrefix>1.0.0</VersionPrefix>
+	<VersionPrefix>1.0.1</VersionPrefix>
 	<Authors>zoppa software</Authors>
 	<Company />
 	<PackageProjectUrl>https://github.com/zoppa-software/ZoppaLogger</PackageProjectUrl>
